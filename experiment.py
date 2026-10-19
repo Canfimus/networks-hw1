@@ -14,7 +14,7 @@ Outputs (in --outdir):
 and the plots produced by plot_results.py.
 
 Example:
-    python experiment.py                     # k=8, 500 trials, default rates
+    python experiment.py                     # k=8, 10000 trials, default rates
     python experiment.py --k 4 --trials 200 --percents 0 10 20 50
 """
 
@@ -31,7 +31,8 @@ from failures import eligible_links, num_links_to_fail, random_failure_order, re
 from generate import default_host_pair, parse_host
 from topology import build_fat_tree, paper_address, validate_k
 
-DEFAULT_PERCENTS = [0, 1, 2, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90]
+DEFAULT_PERCENTS = [0, 2, 5, 10, 15, 20, 25, 30, 40, 50, 55, 60, 65, 70,
+                    72.5, 75, 77.5, 80, 82.5, 85, 87.5, 90]
 
 
 def run_trials(k, percents, trials, seed, src, dst):
@@ -116,8 +117,8 @@ def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--k", type=int, default=8, help="switch port count (default: 8)")
-    p.add_argument("--trials", type=int, default=500,
-                   help="independent random trials per failure rate (default: 500)")
+    p.add_argument("--trials", type=int, default=10000,
+                   help="independent random trials per failure rate (default: 10000)")
     p.add_argument("--percents", type=float, nargs="+", default=DEFAULT_PERCENTS,
                    help="failure percentages of switch-to-switch links to test")
     p.add_argument("--seed", type=int, default=2026, help="master random seed (default: 2026)")

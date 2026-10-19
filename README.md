@@ -65,11 +65,8 @@ pip install -r requirements.txt
 python generate.py --k 4
 python generate.py --k 8 --failure-percent 30 --seed 1 --show-failed
 
-# Main experiment (k=8, 500 trials per rate) -> results/main/
-python experiment.py --outdir results/main
-
-# Larger run (10,000 trials, finer grid at high failure rates) -> results/zoom/
-python experiment.py --trials 10000 --percents 0 10 20 30 40 50 55 60 65 70 72.5 75 77.5 80 82.5 85 87.5 90 --outdir results/zoom
+# The experiment (k=8, 10,000 trials per rate, about 30 s) -> results/
+python experiment.py
 
 # Tests
 python -m unittest discover -s tests
@@ -106,8 +103,8 @@ Shortest path 10.0.0.2 -> 10.7.3.5: 6 hops
 | Parameter | Default | Meaning |
 |---|---|---|
 | `--k` | 8 | Switch port count |
-| `--trials` | 500 | Random trials per failure rate |
-| `--percents` | `0 1 2 5 10 15 20 25 30 40 50 60 70 80 90` | Failure percentages to test |
+| `--trials` | 10000 | Random trials per failure rate |
+| `--percents` | `0 2 5 10 15 20 25 30 40 50 55 60 65 70 72.5 75 77.5 80 82.5 85 87.5 90` | Failure percentages to test |
 | `--seed` | 2026 | Master random seed |
 | `--src`, `--dst` | `10.0.0.2`, `10.7.3.5` (for k = 8) | Must be in different pods |
 | `--outdir` | `results` | Output folder |
@@ -132,7 +129,8 @@ an error message.
 * **Setup:** k = 8 fat-tree (128 hosts, 80 switches). The two fixed hosts are `10.0.0.2`
   (pod 0) and `10.7.3.5` (pod 7). Because of the fat-tree's symmetry, any pair of hosts in
   different pods behaves the same.
-* **Parameters:** failure rates from 0% to 90%, 500 random trials per rate, seed 2026.
+* **Parameters:** failure rates from 0% to 90% (more finely spaced above 50%, where things
+  change fastest), 10,000 random trials per rate, seed 2026.
 * **Each trial:** copy the intact graph, remove the failed links, run BFS between the two
   hosts, and record the path length or "disconnected".
 * **Metrics:**
@@ -145,29 +143,29 @@ the paper's routing algorithm would pick.
 
 ## 7. Results
 
-Main run (`results/main/log.txt`, 500 trials per rate):
+From `results/log.txt` (10,000 trials per rate; the full table has 22 rates):
 
-| Failed links | 0% | 10.2% | 19.9% | 30.1% | 39.8% | 50.0% | 60.2% | 69.9% | 80.1% | 89.8% |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Connected trials | 500 | 500 | 497 | 487 | 473 | 451 | 371 | 230 | 30 | 0 |
-| Connectivity probability | 1.000 | 1.000 | 0.994 | 0.974 | 0.946 | 0.902 | 0.742 | 0.460 | 0.060 | 0.000 |
-| Average path length | 6.000 | 6.008 | 6.036 | 6.152 | 6.381 | 6.984 | 7.849 | 9.591 | 8.800 | – |
+| Failed links | 0% | 10.2% | 19.9% | 30.1% | 39.8% | 50.0% | 60.2% | 69.9% | 75.0% | 80.1% | 85.2% | 89.8% |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Connected trials | 10000 | 10000 | 9980 | 9863 | 9529 | 8799 | 7289 | 4505 | 2248 | 621 | 122 | 15 |
+| Connectivity probability | 1.000 | 1.000 | 0.998 | 0.986 | 0.953 | 0.880 | 0.729 | 0.451 | 0.225 | 0.062 | 0.012 | 0.002 |
+| Average path length | 6.000 | 6.002 | 6.029 | 6.148 | 6.402 | 6.918 | 7.807 | 9.432 | 9.906 | 8.908 | 6.934 | 6.267 |
 
 ### 7.1 Connectivity probability
 
-![Connectivity probability](results/main/connectivity_probability.png)
+![Connectivity probability](results/connectivity_probability.png)
 
 * The fat-tree is very robust. With up to 10% of switch links failed, the hosts stayed
-  connected in every trial. At 30% they were still connected in 97% of trials.
-* Beyond about 60% connectivity collapses: 6% of trials are connected at 80%, and none
-  at 90%.
+  connected in every one of the 10,000 trials. At 30% they were still connected in 98.6%.
+* Beyond about 60% connectivity collapses: 6% of trials are connected at 80%, and only
+  0.2% at 90%.
 * The weak point is the **edge switch**. A host depends on a single edge switch with only
   k/2 = 4 uplinks. If those 4 links fail, the host is cut off, no matter how much
   redundancy exists in the 16 core switches above it.
 
 ### 7.2 Average shortest path length
 
-![Average path length](results/main/avg_path_length.png)
+![Average path length](results/avg_path_length.png)
 
 The colour of each dot is the connectivity probability, i.e. the share of trials that the
 average is based on. Dark dots average over almost all trials, and yellow dots over only a
@@ -177,18 +175,10 @@ few.
   (k/2)² = 16 different 6-hop paths, one through each core switch, and usually at least
   one survives.
 * When all 6-hop paths are broken, the path has to detour (down to another edge switch
-  and back up). Each detour adds 2 hops, so the average grows: 6.15 at 30%, 6.98 at 50%,
-  9.59 at 70%.
-* **Surprising result: at very high failure rates the average goes back *down*** (9.59 at
-  70% → 8.80 at 80%). Only 30 trials are connected at 80%, so we confirmed this with
-  10,000 trials per rate (`results/zoom/log.txt`):
-
-  ![Average path length, 10,000 trials](results/zoom/avg_path_length.png)
-
-  | Failed links | 60% | 70% | 75% | 80% | 85% | 90% |
-  |---|---|---|---|---|---|---|
-  | Connected trials (of 10,000) | 7289 | 4505 | 2248 | 621 | 122 | 15 |
-  | Average path length | 7.81 | 9.43 | 9.91 | 8.91 | 6.93 | 6.27 |
+  and back up). Each detour adds 2 hops, so the average grows: 6.15 at 30%, 6.92 at 50%,
+  and a peak of 9.91 at 75%.
+* **Surprising result: after the peak, the average goes back *down***: 8.91 at 80%, 6.93
+  at 85%, and 6.27 at 90%.
 
 **Why? Survivorship bias.** The average includes only the trials that are still connected.
 A long detour needs many links to survive, a short path only a few. When 85–90% of the
@@ -214,11 +204,8 @@ This is why the colour matters: at 90%, "6.3 hops" describes only 15 of 10,000 t
 
 ## 9. AI assistance disclosure
 
-This project was developed with the help of **Claude (Anthropic, Claude Opus 5.5), used
-through Claude Code**. The AI read the assignment and the paper, wrote the code, tests
-and README, ran the tests and experiments, and helped investigate the unexpected drop in
-the average path length. All numbers in this README come from the actual program output
-in `results/`. I reviewed the code and results and take responsibility for the submission.
+I declare that I used AI (Claude by Anthropic, via Claude Code) to write this project.
+I have reviewed and understand all of it, and I take full responsibility for it.
 
 ## Reference
 

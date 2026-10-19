@@ -1,6 +1,6 @@
 """Plot the results written by experiment.py (reads summary.csv + run_config.json).
 
-    python plot_results.py results/main
+    python plot_results.py results
 """
 
 import csv
@@ -106,5 +106,5 @@ def make_plots(outdir):
 
 
 if __name__ == "__main__":
-    for p in make_plots(sys.argv[1] if len(sys.argv) > 1 else "results/main"):
+    for p in make_plots(sys.argv[1] if len(sys.argv) > 1 else "results"):
         print(f"wrote {p}")
