@@ -3,133 +3,103 @@
 Course 361.2.2460 – Communication networks for data centers and AI, Semester A 2026/27.
 
 This project builds the k-ary fat-tree from Al-Fares et al. [1], randomly fails
-switch-to-switch links, and measures how the shortest path between two hosts in
-different pods changes.
+switch-to-switch links, and answers the question:
 
-**Research question:** *How does the average shortest path length between two hosts in
-different pods change as the fraction of failed inter-switch links increases?*
+**How does the average shortest path length between two hosts in different pods change as
+the fraction of failed inter-switch links increases?**
 
 The graph, the failure model and BFS are written in plain Python, with no graph library.
 `matplotlib` is used only for the plots.
 
 ## 1. The fat-tree topology
 
-A k-ary fat-tree (k even) is built from identical k-port switches in three tiers
-(paper, Section 2.2 and Figure 3):
+A k-ary fat-tree (k even) uses identical k-port switches in three tiers (paper, Section 2.2
+and Figure 3):
 
 | Element | Formula | k = 4 | k = 8 |
 |---|---|---|---|
 | Pods | k | 4 | 8 |
-| Edge switches per pod | k/2 | 2 | 4 |
-| Aggregation switches per pod | k/2 | 2 | 4 |
+| Edge / aggregation switches per pod | k/2 each | 2 | 4 |
 | Core switches | (k/2)² | 4 | 16 |
 | Hosts | k³/4 | 16 | 128 |
 | Switch-to-switch links | k³/2 | 32 | 256 |
 
-The links are created as follows:
+The tiers are wired as follows:
 
 * **Host – Edge:** each edge switch connects to k/2 hosts.
 * **Edge – Aggregation:** each edge switch connects to every aggregation switch in its pod.
-* **Aggregation – Core:** the (k/2)² core switches are arranged in k/2 rows of k/2.
-  Aggregation switch number `a` in *every* pod connects to all k/2 cores in row `a`. As
-  a result, each core switch has exactly one link to each pod. This matches the paper's
-  rule ("the i-th port of any core switch is connected to pod i… on (k/2) strides") and
-  the links shown in Figure 3. For k = 4: `10.0.2.1 → 10.4.1.1, 10.4.1.2` and
-  `10.0.3.1 → 10.4.2.1, 10.4.2.2`.
+* **Aggregation – Core:** the cores form k/2 rows of k/2. Aggregation switch `a` of every
+  pod connects to all cores in row `a`. So each core has exactly one link to each pod,
+  as in the paper's Figure 3.
 
-In the complete topology every switch has exactly k neighbours. In the intact network:
+In the intact network every switch has exactly k neighbours. Two hosts are 2 hops apart
+if they share an edge switch, 4 hops apart if they are in the same pod, and 6 hops apart
+if they are in different pods.
 
-* hosts on the same edge switch are 2 hops apart;
-* hosts in the same pod but on different edge switches are 4 hops apart;
-* hosts in different pods are 6 hops apart (host → edge → agg → core → agg → edge → host).
-
-## 2. Project structure
+## 2. Implementation
 
 | File | Contents |
 |---|---|
-| [topology.py](topology.py) | `build_fat_tree(k)`: builds the graph; also the expected counts and the paper's `10.pod.switch.id` names |
-| [failures.py](failures.py) | Random link failures: `eligible_links`, `num_links_to_fail`, `fail_random_links` |
-| [bfs.py](bfs.py) | Our BFS: `shortest_path_length(adj, src, dst)`, which returns `None` if there is no path |
+| [topology.py](topology.py) | `build_fat_tree(k)` builds the graph |
+| [failures.py](failures.py) | Random link failures (`fail_random_links`) |
+| [bfs.py](bfs.py) | Our BFS: `shortest_path_length(adj, src, dst)` returns `None` if there is no path |
 | [generate.py](generate.py) | CLI: build one topology, optionally fail links, print a report |
-| [experiment.py](experiment.py) | CLI: the main experiment; saves CSV results and plots |
-| [plot_results.py](plot_results.py) | Draws the two plots from `summary.csv` |
+| [experiment.py](experiment.py) | CLI: runs the experiment and saves results and plots |
+| [plot_results.py](plot_results.py) | Draws the plots from `results/*/summary.csv` |
 | [tests/](tests/) | Correctness tests (`unittest`) |
-| [results/](results/) | Experiment output: `main/` (500 trials) and `zoom/` (10,000 trials) |
 
-**Graph representation:** an adjacency list `adj: dict[node, set[node]]`. Nodes are
-tuples such as `("host", pod, edge, h)`, `("edge", pod, e)`, `("agg", pod, a)` and
-`("core", row, col)`. The tree also keeps an ordered list of all links, and random
-failures are always drawn from this list. Using a fixed order makes runs with the same
-seed reproducible.
+* **Graph:** an adjacency list, `dict[node, set[node]]`. Nodes are tuples such as
+  `("edge", pod, e)` or `("core", row, col)`.
+* **BFS:** a standard queue-based BFS. Every link counts as one hop, so the first time BFS
+  reaches the destination it has found the shortest path. If the queue empties first, the
+  hosts are disconnected.
 
-**BFS:** this is a standard queue-based breadth-first search. All links count as 1 hop,
-so BFS visits nodes in order of their distance from the source. The first time it
-reaches the destination, it has found the shortest path. If the queue empties first, the
-hosts are disconnected and BFS returns `None`.
+## 3. How to run
 
-## 3. Installation
-
-Requirements: Python ≥ 3.8 (tested with 3.13.7) and matplotlib (tested with 3.10.8).
+Requirements: Python ≥ 3.8 and matplotlib (tested with Python 3.13.7, matplotlib 3.10.8).
 
 ```bash
 pip install -r requirements.txt
-```
 
-## 4. How to run
-
-```bash
-# Generate one topology (optionally with failures)
+# One topology, with optional failures
 python generate.py --k 4
-python generate.py --k 8 --failure-percent 30 --seed 1
-python generate.py --k 8 --failure-rate 0.3 --seed 1 --src 10.0.0.2 --dst 10.5.1.3 --show-failed
-python generate.py --k 4 --failure-percent 25 --edges-out topo_k4.txt
+python generate.py --k 8 --failure-percent 30 --seed 1 --show-failed
 
-# Main experiment: k=8, 500 trials per failure rate (about 1 s) -> results/main/
+# Main experiment (k=8, 500 trials per rate) -> results/main/
 python experiment.py --outdir results/main
 
-# Larger run: 10,000 trials, finer grid at high failure rates (about 30 s) -> results/zoom/
+# Larger run (10,000 trials, finer grid at high failure rates) -> results/zoom/
 python experiment.py --trials 10000 --percents 0 10 20 30 40 50 55 60 65 70 72.5 75 77.5 80 82.5 85 87.5 90 --outdir results/zoom
 
-# Run the tests
-python -m unittest discover -s tests -v
+# Tests
+python -m unittest discover -s tests
 ```
 
-Example output of `python generate.py --k 8 --failure-percent 30 --seed 1`:
+`python generate.py --k 8 --failure-percent 30 --seed 1` prints (shortened):
 
 ```
 k = 8 fat-tree
   host  nodes :    128   (expected 128)
-  edge  nodes :     32   (expected 32)
-  agg   nodes :     32   (expected 32)
-  core  nodes :     16   (expected 16)
-  host-edge links:    128   (expected 128)
-  edge-agg  links:    128   (expected 128)
-  agg-core  links:    128   (expected 128)
+  ...
   switch degrees (intact): [8]
-
 Failures: requested rate 0.3, seed 1
-  eligible (switch-switch) links: 256
   failed links: 77  (= 30.08% of eligible)
-  failed by kind: {'edge-agg': 35, 'agg-core': 42}
-  edge switches with no uplink left: 0
   hosts reachable from 10.0.0.2: 128 / 128
-
 Shortest path 10.0.0.2 -> 10.7.3.5: 6 hops
 ```
 
-## 5. Parameters
+## 4. Parameters
 
 **`generate.py`**
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `--k` | 4 | Switch port count; must be an even integer ≥ 2 |
-| `--failure-rate` | 0 | Fraction of switch-to-switch links to fail, in [0, 1] |
-| `--failure-percent` | – | The same value as a percentage in [0, 100]. Use either this or `--failure-rate`, not both |
+| `--k` | 4 | Switch port count (even integer ≥ 2) |
+| `--failure-rate` / `--failure-percent` | 0 | Fraction [0, 1] or percentage [0, 100] of switch-to-switch links to fail (use only one of them) |
 | `--seed` | 0 | Random seed for the failures |
-| `--src`, `--dst` | `10.0.0.2`, last host of the last pod | Hosts in the paper's format `10.pod.edge.id`, where id ∈ [2, k/2+1] |
+| `--src`, `--dst` | first host of pod 0, last host of pod k−1 | Hosts in the paper's format `10.pod.edge.id` |
 | `--edges-out PATH` | – | Write the surviving links to a file |
-| `--show-failed` | off | Print every failed link |
+| `--show-failed` | off | Print the failed links |
 
 **`experiment.py`**
 
@@ -143,96 +113,75 @@ Shortest path 10.0.0.2 -> 10.7.3.5: 6 hops
 | `--outdir` | `results` | Output folder |
 | `--no-plot` | off | Skip the plots |
 
-Invalid values are rejected with an error message. Examples: odd k, a rate outside
-[0, 1], or a host address that doesn't exist for the given k.
+Invalid input, such as an odd k, a rate outside [0, 1] or an unknown host, is rejected with
+an error message.
 
-## 6. Failure model
+## 5. Failure model
 
-* Only **switch-to-switch links** can fail (edge–agg and agg–core): 256 links for k = 8.
-  Host–edge links never fail, because each host has only one link.
-* For a failure rate f, exactly **n = round(f × 256)** links fail (ties round up), chosen
-  uniformly at random without replacement. The plots use the *actual* percentage n/256.
-  For example, 10% becomes 26 links, which is 10.16%.
-* Nodes are never removed. A switch whose links all failed simply has no neighbours.
-* **Implementation detail:** each trial shuffles the 256 links once. A failure rate f
-  then fails the first n links of that shuffled list. So, within one trial, the links
-  down at 20% include those down at 10%. Different trials use different random seeds,
-  and every trial seed is saved in `trials.csv`.
-* **Limitations:** failures are independent and random. The model does not include
-  switch failures, correlated failures (e.g. a whole line card), or links that are only
-  partly degraded.
+* Only **switch-to-switch links** can fail (edge–agg and agg–core, 256 links for k = 8).
+  Host links never fail, since each host has only one link.
+* For a failure rate f, exactly **n = round(f × 256)** distinct links fail, chosen uniformly
+  at random. The plots show the actual percentage. For example, 10% becomes 26 links,
+  which is 10.16%.
+* Nodes are never removed, and a fixed seed always gives the same failures.
+* In each trial the links are shuffled once, and failure rate f fails the first n links.
+  So within one trial, the links that are down at 20% include those down at 10%.
 
-## 7. Experiment
+## 6. Experiment
 
-* k = 8 fat-tree (128 hosts, 80 switches).
-* Fixed hosts: `10.0.0.2` (pod 0) → `10.7.3.5` (pod 7). By the symmetry of the fat-tree,
-  any two hosts in different pods behave the same.
-* Failure rates from 0% to 90%, with 500 random trials per rate and seed 2026.
-* Each trial copies the intact graph, removes the failed links, runs BFS between the two
-  hosts, and records the path length or "disconnected".
+* **Setup:** k = 8 fat-tree (128 hosts, 80 switches). The two fixed hosts are `10.0.0.2`
+  (pod 0) and `10.7.3.5` (pod 7). Because of the fat-tree's symmetry, any pair of hosts in
+  different pods behaves the same.
+* **Parameters:** failure rates from 0% to 90%, 500 random trials per rate, seed 2026.
+* **Each trial:** copy the intact graph, remove the failed links, run BFS between the two
+  hosts, and record the path length or "disconnected".
+* **Metrics:**
+  * **connectivity probability** = connected trials / all trials;
+  * **average shortest path length** over the *connected trials only*. Disconnected trials
+    have no path, so they are not counted as some arbitrary distance.
 
-Two metrics are computed for each failure rate:
+We measure hop counts in the physical graph. This is not latency, and it is not the path
+the paper's routing algorithm would pick.
 
-* **Connectivity probability** = connected trials / total trials.
-* **Average shortest path length** = the mean path length over the *connected trials
-  only*. Disconnected trials have no path, so they are excluded instead of being given
-  an arbitrary distance. The standard deviation is also reported in the tables.
+## 7. Results
 
-We measure hop counts in the **physical graph**. This is not packet latency, and it is
-not the path that the paper's routing algorithm would choose. It is the shortest path
-that exists in the cabling after the failures.
+Main run (`results/main/log.txt`, 500 trials per rate):
 
-## 8. Results
+| Failed links | 0% | 10.2% | 19.9% | 30.1% | 39.8% | 50.0% | 60.2% | 69.9% | 80.1% | 89.8% |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Connected trials | 500 | 500 | 497 | 487 | 473 | 451 | 371 | 230 | 30 | 0 |
+| Connectivity probability | 1.000 | 1.000 | 0.994 | 0.974 | 0.946 | 0.902 | 0.742 | 0.460 | 0.060 | 0.000 |
+| Average path length | 6.000 | 6.008 | 6.036 | 6.152 | 6.381 | 6.984 | 7.849 | 9.591 | 8.800 | – |
 
-Results of the main run (`results/main/log.txt`, 500 trials per rate):
-
-| Failed links | Connected trials | Connectivity probability | Average path length | Std |
-|---|---|---|---|---|
-| 0% | 500/500 | 1.000 | 6.000 | 0.00 |
-| 5.1% | 500/500 | 1.000 | 6.000 | 0.00 |
-| 10.2% | 500/500 | 1.000 | 6.008 | 0.13 |
-| 19.9% | 497/500 | 0.994 | 6.036 | 0.27 |
-| 30.1% | 487/500 | 0.974 | 6.152 | 0.53 |
-| 39.8% | 473/500 | 0.946 | 6.381 | 0.83 |
-| 50.0% | 451/500 | 0.902 | 6.984 | 1.27 |
-| 60.2% | 371/500 | 0.742 | 7.849 | 1.74 |
-| 69.9% | 230/500 | 0.460 | 9.591 | 3.08 |
-| 80.1% | 30/500 | 0.060 | 8.800 | 2.76 |
-| 89.8% | 0/500 | 0.000 | – | – |
-
-### Connectivity probability
+### 7.1 Connectivity probability
 
 ![Connectivity probability](results/main/connectivity_probability.png)
 
-* The fat-tree is very robust. With up to 10% of switch links failed, the two hosts
-  stayed connected in all 500 trials. At 30%, they were still connected in 97% of trials.
-* Connectivity drops quickly beyond about 60%. At 80% only 6% of trials are connected,
-  and at 90% none are.
-* The weakest point is the **edge switch**. Each host hangs on a single edge switch, and
-  that switch has only k/2 = 4 uplinks. If all 4 fail, the host is cut off, no matter how
-  much redundancy exists higher up. The core layer has many more alternatives (16 core
-  switches).
+* The fat-tree is very robust. With up to 10% of switch links failed, the hosts stayed
+  connected in every trial. At 30% they were still connected in 97% of trials.
+* Beyond about 60% connectivity collapses: 6% of trials are connected at 80%, and none
+  at 90%.
+* The weak point is the **edge switch**. A host depends on a single edge switch with only
+  k/2 = 4 uplinks. If those 4 links fail, the host is cut off, no matter how much
+  redundancy exists in the 16 core switches above it.
 
-### Average shortest path length
+### 7.2 Average shortest path length
 
 ![Average path length](results/main/avg_path_length.png)
 
-The colour of each dot shows the connectivity probability at that failure rate, i.e. the
-share of trials that the average is based on. Dark dots are averages over almost all
-trials. Yellow dots are averages over only a few connected trials. Points with fewer
-than 30 connected trials are also labelled "unreliable".
+The colour of each dot is the connectivity probability, i.e. the share of trials that the
+average is based on. Dark dots average over almost all trials, and yellow dots over only a
+few.
 
-* Up to 20% failures, the average stays almost exactly 6. Between two pods there are
-  (k/2)² = 16 different 6-hop paths (one through each core switch), and usually at least
-  one of them survives.
-* When all 6-hop paths are broken, the shortest path has to take a detour. For example,
-  it goes down to another edge switch in the pod and back up again. Each detour adds
-  2 hops, so the lengths are 6, 8, 10, …. The average therefore grows: 6.15 at 30%,
-  6.98 at 50%, 9.59 at 70%.
-* **Surprising result: at very high failure rates the average goes back *down*.** In the
-  500-trial run it falls from 9.59 (70%) to 8.80 (80%). Because only 30 trials are
-  connected at 80%, we repeated the experiment with 10,000 trials per rate to make sure
-  this is real (`results/zoom/log.txt`):
+* Up to 20% failures the average stays at about 6 hops. Between two pods there are
+  (k/2)² = 16 different 6-hop paths, one through each core switch, and usually at least
+  one survives.
+* When all 6-hop paths are broken, the path has to detour (down to another edge switch
+  and back up). Each detour adds 2 hops, so the average grows: 6.15 at 30%, 6.98 at 50%,
+  9.59 at 70%.
+* **Surprising result: at very high failure rates the average goes back *down*** (9.59 at
+  70% → 8.80 at 80%). Only 30 trials are connected at 80%, so we confirmed this with
+  10,000 trials per rate (`results/zoom/log.txt`):
 
   ![Average path length, 10,000 trials](results/zoom/avg_path_length.png)
 
@@ -241,71 +190,29 @@ than 30 connected trials are also labelled "unreliable".
   | Connected trials (of 10,000) | 7289 | 4505 | 2248 | 621 | 122 | 15 |
   | Average path length | 7.81 | 9.43 | 9.91 | 8.91 | 6.93 | 6.27 |
 
-  The peak is about 9.9 hops at 73–75%, after which the average drops back towards 6.
+**Why? Survivorship bias.** The average includes only the trials that are still connected.
+A long detour needs many links to survive, a short path only a few. When 85–90% of the
+links are down, long detours almost never survive. So the few trials that are still
+connected are mostly those where a *short* path happened to survive. More failures never
+shorten the path within a single trial. The average drops only because trials with long
+paths become disconnected and leave the average.
 
-**Why does this happen? Survivorship bias.** The average only includes the trials that
-are still connected. A long path needs *many* links to survive, while a short path needs
-only a few. When 85–90% of the links are down, it is very unlikely that all the links of
-a long detour survived. So in almost every trial that is still connected, the hosts are
-connected because a *short* path happened to survive. The network did not get better.
-We are averaging over a small group of "lucky" trials, and that group mostly contains
-short paths. More failures never make the path shorter within one trial (this is
-checked by a test). The average falls only because the long-path trials become
-disconnected and drop out of the average.
+This is why the colour matters: at 90%, "6.3 hops" describes only 15 of 10,000 trials.
 
-This is why the average path length must always be read together with the connectivity
-probability. At 90%, "average 6.3 hops" describes only 15 out of 10,000 trials.
+## 8. Conclusions and limitations
 
-## 9. Conclusions
+* The fat-tree's many parallel paths make it highly tolerant of random link failures. Up
+  to about 20% failed links, connectivity and path length barely change.
+* Under heavier failures paths first get longer, and then the hosts become disconnected.
+  The edge switch, with only k/2 uplinks, is the main weak point. A larger k means more
+  uplinks and more resilience.
+* **Limitations:**
+  * we measure hop count in the physical graph, not latency, bandwidth, or the routes the
+    paper's routing scheme would actually choose (it may not use every detour BFS finds);
+  * we test only one k, one host pair, and independent random link failures, with no
+    switch failures and no correlated failures.
 
-* The fat-tree's many parallel paths make it highly tolerant of random link failures.
-  Up to about 20% failed switch links, connectivity and path length barely change.
-* Under heavier failures, paths first get longer (detours), then the hosts start to get
-  disconnected.
-* The edge switch, with only k/2 uplinks per host, is the main weak point. A larger k
-  gives more uplinks and therefore more resilience.
-* These results describe the physical topology only. The actual routing scheme in the
-  paper might not use every detour path that BFS finds, so real performance under
-  failures could be worse.
-
-## 10. Tests
-
-`python -m unittest discover -s tests -v` → **Ran 34 tests, OK**.
-
-* **Topology** ([tests/test_topology.py](tests/test_topology.py)), for k = 2, 4, 6, 8, 10, 16:
-  * node, pod and link counts match the formulas;
-  * every switch has degree k;
-  * there are no duplicate links;
-  * edge–agg and agg–core wiring is correct, and the links of Figure 3 are present;
-  * the intact graph is connected;
-  * hosts are 2 / 4 / 6 hops apart (same edge / same pod / different pods);
-  * there are 16 shortest paths between pods for k = 8.
-* **Failures and BFS** ([tests/test_failures_bfs.py](tests/test_failures_bfs.py)):
-  * BFS is correct on small hand-made graphs and on random graphs (compared to a simple
-    reference algorithm);
-  * BFS returns `None` for disconnected hosts;
-  * rounding works, and invalid rates are rejected;
-  * only switch links fail, and failed links are actually removed;
-  * nodes are kept, and 0% failures give the original graph (distance 6);
-  * the same seed gives the same result;
-  * cutting an edge switch's uplinks disconnects its hosts;
-  * a specific failure pattern forces an 8-hop detour.
-* **Experiment** ([tests/test_experiment.py](tests/test_experiment.py)):
-  * 0% gives 6 hops in every trial, and 100% gives disconnected in every trial;
-  * results are reproducible;
-  * more failures never shorten the path within a trial;
-  * a trial can be reproduced with `generate.py` and its seed;
-  * the summary averages are computed correctly.
-
-## 11. Limitations and possible extensions
-
-* We measure hop count in the physical graph, not latency, bandwidth or the actual
-  routing behaviour of the paper.
-* Only one host pair, one k (8) and random independent link failures are tested.
-* Possible extensions: switch failures, failures of host links, comparing several values
-  of k, or restricting paths to the up-down routes that fat-tree routing actually uses.
-
-## 12. AI assistance disclosure
+## 9. AI assistance disclosure
 
 This project was developed with the help of **Claude (Anthropic, Claude Opus 5.5), used
 through Claude Code**. The AI read the assignment and the paper, wrote the code, tests
@@ -316,4 +223,5 @@ in `results/`. I reviewed the code and results and take responsibility for the s
 ## Reference
 
 [1] M. Al-Fares, A. Loukissas, and A. Vahdat, "A scalable, commodity data center network
-architecture," *Proc. ACM SIGCOMM 2008*, pp. 63–74, doi: 10.1145/1402946.1402967.
+architecture," *SIGCOMM Comput. Commun. Rev.*, vol. 38, no. 4, pp. 63–74, Oct. 2008,
+doi: 10.1145/1402946.1402967.
