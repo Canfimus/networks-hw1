@@ -8,7 +8,7 @@ rate f fails its first round(f * N) links (see failures.py). Running
 reproduces exactly the same failed topology as that trial.
 
 Outputs (in --outdir):
-    summary.csv      one row per failure rate (metrics + uncertainty)
+    summary.csv      one row per failure rate (connectivity, mean/std length)
     trials.csv       one row per (trial, failure rate): the raw BFS result
     run_config.json  the parameters of the run
 and the plots produced by plot_results.py.
@@ -24,12 +24,11 @@ import json
 import os
 import random
 import time
-from collections import Counter
+from statistics import mean, pstdev
 
 from bfs import shortest_path_length
 from failures import eligible_links, num_links_to_fail, random_failure_order, remove_links
 from generate import default_host_pair, parse_host
-from stats_utils import mean_with_ci, prob_all_of_m_links_failed, wilson_interval
 from topology import build_fat_tree, paper_address, validate_k
 
 DEFAULT_PERCENTS = [0, 1, 2, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90]
@@ -59,27 +58,17 @@ def run_trials(k, percents, trials, seed, src, dst):
     return tree, n_elig, n_failed, trial_seeds, distances
 
 
-def edge_isolation_probability(k, n_failed, n_elig):
-    """P(the source or the destination edge switch loses all k/2 uplinks).
+def summarize(percents, n_failed, n_elig, distances):
+    """One row per failure rate.
 
-    The two edge switches are in different pods, so their uplink sets are
-    disjoint; by inclusion-exclusion
-        P(A or B) = 2 P(k/2 given links failed) - P(k given links failed).
-    Either event disconnects the hosts, so this is a lower bound on the
-    disconnection probability.
+    p_connected = connected trials / all trials.
+    mean_len and std_len are computed over the connected trials only
+    (a disconnected trial has no path length).
     """
-    half = k // 2
-    return (2 * prob_all_of_m_links_failed(half, n_failed, n_elig)
-            - prob_all_of_m_links_failed(k, n_failed, n_elig))
-
-
-def summarize(k, percents, n_failed, n_elig, distances):
     rows = []
     for p, n in zip(percents, n_failed):
         ds = distances[p]
         connected = [d for d in ds if d is not None]
-        lo, hi = wilson_interval(len(connected), len(ds))
-        m, s, ci = mean_with_ci(connected)
         rows.append({
             "percent_requested": p,
             "n_failed": n,
@@ -87,15 +76,8 @@ def summarize(k, percents, n_failed, n_elig, distances):
             "trials": len(ds),
             "connected": len(connected),
             "p_connected": len(connected) / len(ds),
-            "p_connected_lo95": lo,
-            "p_connected_hi95": hi,
-            "p_connected_edge_bound": 1.0 - edge_isolation_probability(k, n, n_elig),
-            "mean_len": m,
-            "std_len": s,
-            "mean_len_ci95": ci,
-            "min_len": min(connected) if connected else None,
-            "max_len": max(connected) if connected else None,
-            "length_counts": dict(sorted(Counter(connected).items())),
+            "mean_len": mean(connected) if connected else float("nan"),
+            "std_len": pstdev(connected) if connected else float("nan"),
         })
     return rows
 
@@ -105,14 +87,10 @@ def write_outputs(outdir, config, rows, percents, n_failed, trial_seeds, distanc
     with open(os.path.join(outdir, "run_config.json"), "w") as f:
         json.dump(config, f, indent=2)
 
-    fields = [key for key in rows[0] if key != "length_counts"] + ["length_counts"]
     with open(os.path.join(outdir, "summary.csv"), "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=fields)
+        w = csv.DictWriter(f, fieldnames=list(rows[0]))
         w.writeheader()
-        for r in rows:
-            out = dict(r)
-            out["length_counts"] = json.dumps({str(d): c for d, c in r["length_counts"].items()})
-            w.writerow(out)
+        w.writerows(rows)
 
     with open(os.path.join(outdir, "trials.csv"), "w", newline="") as f:
         w = csv.writer(f)
@@ -124,15 +102,14 @@ def write_outputs(outdir, config, rows, percents, n_failed, trial_seeds, distanc
 
 
 def print_table(rows):
-    print(f"{'req%':>5} {'failed':>6} {'act%':>6} {'P(conn)':>8} {'95% CI':>15} "
-          f"{'edge-bound':>10} {'n_conn':>6} {'mean len':>9} {'+-95%':>6}  length counts")
+    print(f"{'req%':>5} {'failed':>6} {'act%':>6} {'connected':>11} {'P(conn)':>7} "
+          f"{'mean len':>8} {'std':>5}")
     for r in rows:
-        ci = f"[{r['p_connected_lo95']:.3f},{r['p_connected_hi95']:.3f}]"
-        mean = f"{r['mean_len']:.3f}" if r["connected"] else "-"
-        half = f"{r['mean_len_ci95']:.3f}" if r["connected"] > 1 else "-"
+        mean_s = f"{r['mean_len']:.3f}" if r["connected"] else "-"
+        std_s = f"{r['std_len']:.2f}" if r["connected"] else "-"
         print(f"{r['percent_requested']:>5g} {r['n_failed']:>6} {r['percent_failed']:>6.2f} "
-              f"{r['p_connected']:>8.3f} {ci:>15} {r['p_connected_edge_bound']:>10.3f} "
-              f"{r['connected']:>6} {mean:>9} {half:>6}  {r['length_counts']}")
+              f"{r['connected']:>5}/{r['trials']:<5} {r['p_connected']:>7.3f} "
+              f"{mean_s:>8} {std_s:>5}")
 
 
 def parse_args(argv=None):
@@ -175,7 +152,7 @@ def main(argv=None):
     start = time.time()
     tree, n_elig, n_failed, trial_seeds, distances = run_trials(
         args.k, args.percents, args.trials, args.seed, args.src, args.dst)
-    rows = summarize(args.k, args.percents, n_failed, n_elig, distances)
+    rows = summarize(args.percents, n_failed, n_elig, distances)
     config = {
         "k": args.k,
         "trials": args.trials,
