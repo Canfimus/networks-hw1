@@ -1,0 +1,26 @@
+{
+  "k": 8,
+  "trials": 500,
+  "seed": 2026,
+  "percents": [
+    0,
+    1,
+    2,
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    40,
+    50,
+    60,
+    70,
+    80,
+    90
+  ],
+  "src": "10.0.0.2",
+  "dst": "10.7.3.5",
+  "eligible_links": 256,
+  "failure_model": "uniform without replacement over edge-agg and agg-core links; n = floor(rate*N + 0.5); nested failure sets within a trial"
+}
