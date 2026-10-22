@@ -1,15 +1,10 @@
-# HW1 – Fat-Tree Topology Generation and Failure Analysis
-
-Course 361.2.2460 – Communication networks for data centers and AI, Semester A 2026/27.
+# HW1 - Fat-Tree Topology Generation and Failure Analysis
 
 This project builds the k-ary fat-tree from Al-Fares et al. [1], randomly fails
 switch-to-switch links, and answers the question:
 
 **How does the average shortest path length between two hosts in different pods change as
 the fraction of failed inter-switch links increases?**
-
-The graph, the failure model and BFS are written in plain Python, with no graph library.
-`matplotlib` is used only for the plots.
 
 ## 1. The fat-tree topology
 
@@ -26,9 +21,9 @@ and Figure 3):
 
 The tiers are wired as follows:
 
-* **Host – Edge:** each edge switch connects to k/2 hosts.
-* **Edge – Aggregation:** each edge switch connects to every aggregation switch in its pod.
-* **Aggregation – Core:** the cores form k/2 rows of k/2. Aggregation switch `a` of every
+* **Host - Edge:** each edge switch connects to k/2 hosts.
+* **Edge - Aggregation:** each edge switch connects to every aggregation switch in its pod.
+* **Aggregation - Core:** the cores form k/2 rows of k/2. Aggregation switch `a` of every
   pod connects to all cores in row `a`. So each core has exactly one link to each pod,
   as in the paper's Figure 3.
 
@@ -94,8 +89,8 @@ Shortest path 10.0.0.2 -> 10.7.3.5: 6 hops
 | `--k` | 4 | Switch port count (even integer ≥ 2) |
 | `--failure-rate` / `--failure-percent` | 0 | Fraction [0, 1] or percentage [0, 100] of switch-to-switch links to fail (use only one of them) |
 | `--seed` | 0 | Random seed for the failures |
-| `--src`, `--dst` | first host of pod 0, last host of pod k−1 | Hosts in the paper's format `10.pod.edge.id` |
-| `--edges-out PATH` | – | Write the surviving links to a file |
+| `--src`, `--dst` | first host of pod 0, last host of pod k-1 | Hosts in the paper's format `10.pod.edge.id` |
+| `--edges-out PATH` | - | Write the surviving links to a file |
 | `--show-failed` | off | Print the failed links |
 
 **`experiment.py`**
@@ -115,7 +110,7 @@ an error message.
 
 ## 5. Failure model
 
-* Only **switch-to-switch links** can fail (edge–agg and agg–core, 256 links for k = 8).
+* Only **switch-to-switch links** can fail (edge-agg and agg-core, 256 links for k = 8).
   Host links never fail, since each host has only one link.
 * For a failure rate f, exactly **n = round(f × 256)** distinct links fail, chosen uniformly
   at random. The plots show the actual percentage. For example, 10% becomes 26 links,
@@ -181,7 +176,7 @@ few.
   at 85%, and 6.27 at 90%.
 
 **Why? Survivorship bias.** The average includes only the trials that are still connected.
-A long detour needs many links to survive, a short path only a few. When 85–90% of the
+A long detour needs many links to survive, a short path only a few. When 85-90% of the
 links are down, long detours almost never survive. So the few trials that are still
 connected are mostly those where a *short* path happened to survive. More failures never
 shorten the path within a single trial. The average drops only because trials with long
@@ -204,11 +199,11 @@ This is why the colour matters: at 90%, "6.3 hops" describes only 15 of 10,000 t
 
 ## 9. AI assistance disclosure
 
-I declare that I used AI (Claude by Anthropic, via Claude Code) to write this project.
+I declare that I used an AI tool (Claude Code) to help me with writing and implementing this project.
 I have reviewed and understand all of it, and I take full responsibility for it.
 
 ## Reference
 
 [1] M. Al-Fares, A. Loukissas, and A. Vahdat, "A scalable, commodity data center network
-architecture," *SIGCOMM Comput. Commun. Rev.*, vol. 38, no. 4, pp. 63–74, Oct. 2008,
+architecture," *SIGCOMM Comput. Commun. Rev.*, vol. 38, no. 4, pp. 63-74, Oct. 2008,
 doi: 10.1145/1402946.1402967.

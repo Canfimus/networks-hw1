@@ -22,7 +22,7 @@ BLUE = "#2a78d6"
 GRAY = "#a3a29b"
 LOW_N = 30  # fewer connected trials than this -> the average is labelled unreliable
 
-XLABEL = "Failed switch-to-switch links (% of edge–agg + agg–core links)"
+XLABEL = "Failed switch-to-switch links (% of edge-agg + agg-core links)"
 
 plt.rcParams.update({
     "figure.facecolor": SURFACE, "axes.facecolor": SURFACE,
